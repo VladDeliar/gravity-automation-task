@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gravity — тестова форма заявки</title>
+  <style>
+    :root { --bg:#0f1115; --card:#191c23; --acc:#3ddc97; --txt:#e8eaed; --muted:#9aa0a6; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background:var(--bg); color:var(--txt); display:flex; min-height:100vh;
+           align-items:center; justify-content:center; padding:24px; }
+    .card { background:var(--card); border:1px solid #262a33; border-radius:16px;
+            padding:28px; width:100%; max-width:460px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    p.sub { color:var(--muted); margin:0 0 20px; font-size:14px; }
+    label { display:block; font-size:13px; margin:14px 0 6px; color:var(--muted); }
+    input, select, textarea { width:100%; padding:11px 12px; border-radius:10px;
+            border:1px solid #2c313b; background:#0f1217; color:var(--txt); font-size:14px; }
+    .checks { display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; }
+    .checks label { display:flex; align-items:center; gap:6px; margin:0; color:var(--txt);
+            background:#0f1217; padding:8px 12px; border-radius:10px; border:1px solid #2c313b; cursor:pointer; }
+    .checks input { width:auto; }
+    button { margin-top:22px; width:100%; padding:13px; border:none; border-radius:10px;
+            background:var(--acc); color:#06281c; font-weight:700; font-size:15px; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:default; }
+    .endpoint { margin-bottom:18px; }
+    #result { margin-top:16px; padding:12px; border-radius:10px; font-size:13px;
+            white-space:pre-wrap; display:none; }
+    #result.ok { background:#10261d; border:1px solid #1f5c44; display:block; }
+    #result.err { background:#2a1414; border:1px solid #6b2a2a; display:block; }
+  </style>
+</head>
+<body>
+  <form class="card" id="leadForm">
+    <h1>Підібрати smart home-рішення</h1>
+    <p class="sub">Тестова форма Gravity → n8n webhook</p>
+
+    <div class="endpoint">
+      <label>Webhook URL (n8n)</label>
+      <input id="endpoint" type="url"
+             placeholder="https://your-n8n.example.com/webhook/gravity-lead" />
+    </div>
+
+    <label>Імʼя *</label>
+    <input name="name" required placeholder="Ваше Імʼя" />
+
+    <label>Телефон *</label>
+    <input name="phone" required placeholder="+380 67 123 45 67" />
+
+    <label>Тип обʼєкта *</label>
+    <select name="object_type" required>
+      <option value="Квартира">Квартира</option>
+      <option value="Будинок">Будинок</option>
+      <option value="Комерція">Комерція</option>
+    </select>
+
+    <label>Площа, м² *</label>
+    <input name="area" type="number" required placeholder="120" />
+
+    <label>Стадія ремонту *</label>
+    <select name="stage" required>
+      <option value="Проєктування">Проєктування</option>
+      <option value="Чорновий">Чорновий</option>
+      <option value="Чистовий">Чистовий</option>
+      <option value="Готово">Готово</option>
+    </select>
+
+    <label>Що цікавить *</label>
+    <div class="checks">
+      <label><input type="checkbox" name="interest" value="Smart home" /> Smart home</label>
+      <label><input type="checkbox" name="interest" value="Eлектрика" /> Eлектрика</label>
+      <label><input type="checkbox" name="interest" value="Eнергонезалежність" /> Eнергонезалежність</label>
+      <label><input type="checkbox" name="interest" value="Wireless" /> Wireless</label>
+    </div>
+
+    <label>Коментар</label>
+    <textarea name="comment" rows="3" placeholder="Цікавить керування зі смартфона"></textarea>
+
+    <button type="submit" id="submitBtn">Залишити заявку</button>
+    <div id="result"></div>
+  </form>
+
+  <script>
+    const form = document.getElementById('leadForm');
+    const result = document.getElementById('result');
+    const btn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const endpoint = document.getElementById('endpoint').value.trim();
+      if (!endpoint) { showErr('Вкажи Webhook URL з n8n.'); return; }
+
+      const interest = [...form.querySelectorAll('input[name=interest]:checked')].map(i => i.value);
+      const payload = {
+        name: form.name.value,
+        phone: form.phone.value,
+        object_type: form.object_type.value,
+        area: form.area.value,
+        stage: form.stage.value,
+        interest: interest,
+        comment: form.comment.value,
+        source: 'test-form.html'
+      };
+
+      btn.disabled = true; btn.textContent = 'Відправляю…';
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const text = await res.text();
+        if (res.ok) showOk('✅ Заявку відправлено!\n\nВідповідь n8n:\n' + text);
+        else showErr('❌ Помилка ' + res.status + '\n' + text);
+      } catch (err) {
+        showErr('❌ Не вдалося надіслати:\n' + err.message +
+          '\n\nЯкщо n8n на іншому домені — увімкни CORS (Allowed Origins) у налаштуваннях webhook.');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Залишити заявку';
+      }
+    });
+
+    function showOk(m){ result.className='ok'; result.textContent=m; }
+    function showErr(m){ result.className='err'; result.textContent=m; }
+  </script>
+</body>
+</html>

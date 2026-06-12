@@ -1,0 +1,296 @@
+{
+  "name": "Gravity — Заявки з сайту",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gravity-lead",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "4f67cc61-dbf5-4f60-ba74-8f2e3bf74f69",
+      "name": "Webhook (форма)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "gravity-lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Нормалізуємо дані заявки. Інструкції для моделі — у ноді «Gemini — аналіз заявки».\nconst b = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\n\nfunction pick(...keys) {\n  for (const k of keys) {\n    if (b[k] !== undefined && b[k] !== null && b[k] !== '') return b[k];\n  }\n  return '';\n}\n\nconst interestRaw = b.interest !== undefined ? b.interest : pick('interest', 'request');\nconst interest = Array.isArray(interestRaw) ? interestRaw.join(', ') : String(interestRaw || '');\n\nconst lead = {\n  date: new Date().toISOString().slice(0, 16).replace('T', ' '),\n  name: String(pick('name')),\n  phone: String(pick('phone')),\n  object_type: String(pick('object_type', 'object')),\n  area: String(pick('area')),\n  stage: String(pick('stage')),\n  interest: interest,\n  comment: String(pick('comment')),\n  source: String(pick('source') || 'gravity-website')\n};\n\nconst promptText = [\n  `Імʼя: ${lead.name}`,\n  `Телефон: ${lead.phone}`,\n  `Тип обʼєкта: ${lead.object_type}`,\n  `Площа: ${lead.area} м²`,\n  `Стадія ремонту: ${lead.stage}`,\n  `Що цікавить: ${lead.interest}`,\n  `Коментар: ${lead.comment}`\n].join('\\n');\n\nreturn [{ json: { ...lead, promptText } }];"
+      },
+      "id": "dd6e07f6-312b-48ce-b31a-030adb782dc7",
+      "name": "Нормалізувати заявку",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Розбираємо відповідь Gemini і будуємо текст для Telegram.\nconst lead = $('Нормалізувати заявку').item.json;\n\nlet ai = { solution_type: 'консультація', summary: 'AI не зміг розібрати заявку — потрібна ручна перевірка.', next_step: 'Передзвонити клієнту та уточнити деталі.' };\ntry {\n  const raw = (typeof $json.text === 'string') ? $json.text : '';\n  const a = raw.indexOf('{');\n  const b = raw.lastIndexOf('}');\n  if (a >= 0 && b > a) {\n    const parsed = JSON.parse(raw.slice(a, b + 1));\n    if (parsed && parsed.solution_type) ai = parsed;\n  } else if ($json.output && $json.output.solution_type) {\n    ai = $json.output;\n  }\n} catch (e) {\n  // лишаємо fallback ai\n}\n\nconst tagMap = { professional: 'professional', wireless: 'wireless' };\nconst tag = tagMap[ai.solution_type] || 'консультація';\n\nconst tgMessage = [\n  '🔔 Нова заявка з сайту Gravity',\n  '',\n  `👤 Клієнт: ${lead.name}`,\n  `📞 Телефон: ${lead.phone}`,\n  `🏠 Обʼєкт: ${lead.object_type}, ${lead.area} м²`,\n  `🛠 Стадія: ${lead.stage}`,\n  `🎯 Запит: ${lead.interest}`,\n  lead.comment ? `💬 Коментар: ${lead.comment}` : null,\n  '',\n  `🤖 Тип заявки: ${ai.solution_type}`,\n  `🧠 Висновок AI: ${ai.summary}`,\n  '',\n  `➡️ Наступний крок: ${ai.next_step}`,\n  '',\n  `#заявка #${tag}`\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { solution_type: ai.solution_type, summary: ai.summary, next_step: ai.next_step, tgMessage } }];"
+      },
+      "id": "400b6def-f034-4383-951b-0772c37b7d33",
+      "name": "Розібрати відповідь AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_SPREADSHEET_URL",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "REPLACE_SPREADSHEET_URL",
+          "mode": "url"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "solution_type",
+              "displayName": "solution_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tgMessage",
+              "displayName": "tgMessage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "7bab2396-181b-4071-8e08-ffa5081754eb",
+      "name": "Записати в Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        912,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_GOOGLE_CRED",
+          "name": "Google Service Account (Gravity)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "text": "={{ $('Розібрати відповідь AI').item.json.tgMessage }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1b6c65ca-a559-4e5e-9e83-8424ea3bfe8c",
+      "name": "Сповістити менеджера в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        0
+      ],
+      "webhookId": "bdb6323a-7b60-4884-9824-dab82f202355",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CRED",
+          "name": "Telegram Bot (Gravity)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"solution_type\": $('Розібрати відповідь AI').item.json.solution_type } }}",
+        "options": {}
+      },
+      "id": "94e3cd73-33f9-4d28-8b13-3e8b07e2c097",
+      "name": "Відповісти формі",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.promptText }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Ти — асистент відділу продажів Gravity Smart Home. Аналізуй вхідну заявку з сайту і визначай оптимальний тип рішення та наступний крок для менеджера.\n\nТипи рішень:\n- \"professional\" — дротова professional-система (KNX/централізована). Ознаки: великий обʼєкт (будинок або квартира від ~80 м²), комерція, стадія \"чорновий\" або \"проєктування\", комплексний запит (smart home + клімат + електрика + енергонезалежність).\n- \"wireless\" — бездротове рішення. Ознаки: готовий ремонт без можливості штробити, менша площа, точковий запит (wireless, окремі сценарії, освітлення).\n- \"консультація\" — даних недостатньо, суперечливі вхідні або клієнт не визначився.\n\nПравила:\n- Відповідай ВИКЛЮЧНО валідним JSON без тексту поза JSON.\n- summary — 1–2 речення для менеджера, чому саме цей тип.\n- next_step — конкретна дія (подзвонити / уточнити / попросити план тощо).\n- Пиши українською.\n\nФормат відповіді:\n{\"solution_type\":\"professional|wireless|консультація\",\"summary\":\"...\",\"next_step\":\"...\"}"
+            }
+          ]
+        }
+      },
+      "id": "69fd2da1-298f-40c1-b7b4-655665395243",
+      "name": "Gemini — аналіз заявки",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "a2222222-0000-4000-8000-000000000002",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        220
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini (Gravity)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (форма)": {
+      "main": [
+        [
+          {
+            "node": "Нормалізувати заявку",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нормалізувати заявку": {
+      "main": [
+        [
+          {
+            "node": "Gemini — аналіз заявки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini — аналіз заявки",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini — аналіз заявки": {
+      "main": [
+        [
+          {
+            "node": "Розібрати відповідь AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Розібрати відповідь AI": {
+      "main": [
+        [
+          {
+            "node": "Записати в Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Записати в Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Сповістити менеджера в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Сповістити менеджера в Telegram": {
+      "main": [
+        [
+          {
+            "node": "Відповісти формі",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
